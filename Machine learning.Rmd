@@ -1,0 +1,151 @@
+---
+title: "Machine Learning Final Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+The data consists of a Training data and a Test data (to be used to validate the selected model).
+
+The goal of your project is to predict the manner in which they did the exercise. This is the “classe” variable in the training set. You may use any of the other variables to predict with.
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+## Load libraries
+```{r}
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(corrplot)
+library(gbm)
+library(caret)
+```
+
+##Get and explore the data
+```{r}
+
+train_in <-read.csv("C:\\Users\\dsanchezc\\Downloads\\pml-training.csv",header=T)
+valid_in <-read.csv("C:\\Users\\dsanchezc\\Downloads\\pml-testing.csv",header = T)
+
+#Explore the data set
+dim(valid_in)
+dim(train_in)
+
+#Observations:19622 and 160 variables
+```
+
+#Cleaning the input data
+```{r}
+trainData<- train_in[, colSums(is.na(train_in)) == 0]
+validData <- valid_in[, colSums(is.na(valid_in)) == 0]
+dim(trainData)
+
+## Remove the first seven variables
+trainData <- trainData[, -c(1:7)]
+validData <- validData[, -c(1:7)]
+dim(trainData)
+```
+#Prepare the data for prediction
+```{r}
+set.seed(1234) 
+inTrain <- createDataPartition(trainData$classe, p = 0.7, list = FALSE)
+trainData <- trainData[inTrain, ]
+testData <- trainData[-inTrain, ]
+dim(trainData)
+
+#Cleaning even further by removing the variables that are near-zero-variance
+NZV <- nearZeroVar(trainData)
+trainData <- trainData[, -NZV]
+testData  <- testData[, -NZV]
+dim(trainData)
+```
+#Find the correlation
+```{r}
+cor_mat <- cor(trainData[, -53])
+highlyCorrelated = findCorrelation(cor_mat, cutoff=0.75)
+cor_mat <- cor(trainData[, -53])
+corrplot(cor_mat, order = "FPC", method = "color", type = "upper", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+names(trainData)[highlyCorrelated]
+```
+#Model building 
+Types of algorithms to use
+
+  1.classification trees
+  2.random forests
+  3.Generalized Boosted Model
+
+```{r}
+#Tree
+set.seed(12345)
+decisionTreeMod1 <- rpart(classe ~ ., data=trainData, method="class")
+fancyRpartPlot(decisionTreeMod1)
+
+```
+#validate the model “decisionTreeModel” on the testData to find out how well it performs by looking at the accuracy variable
+```{r}
+predictTreeMod1 <- predict(decisionTreeMod1, testData, type = "class")
+cmtree <- confusionMatrix(table(predictTreeMod1, testData$classe))
+cmtree
+```
+#Plot matrix results
+```{r}
+plot(cmtree$table, col = cmtree$byClass, 
+     main = paste("Decision Tree - Accuracy =", round(cmtree$overall['Accuracy'], 4)))
+```
+
+#Random forest
+```{r}
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modRF1 <- train(classe ~ ., data=trainData, method="rf", trControl=controlRF)
+modRF1$finalModel
+```
+
+#Validate model modRF1
+```{r}
+predictRF1 <- predict(modRF1, newdata=testData)
+cmrf <- confusionMatrix(table(predictRF1, testData$classe))
+cmrf
+```
+
+#Results
+The accuracy rate using the random forest is very high: Accuracy : 1 and therefore the out-of-sample-error is equal to 0***. But it might be due to overfitting
+
+```{r}
+plot(modRF1)
+```
+
+#Random forest confusion plot
+```{r}
+plot(cmrf$table, col = cmrf$byClass, main = paste("Random Forest Confusion Matrix: Accuracy =", round(cmrf$overall['Accuracy'], 4)))
+```
+
+#Boosted Model
+```{r}
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modGBM  <- train(classe ~ ., data=trainData, method = "gbm", trControl = controlGBM, verbose = FALSE)
+modGBM$finalModel
+
+print(modGBM)
+
+```
+#Accuracy : 0.9736 and therefore the *out-of-sample-error is equal to 0.0264
+
+#Best model to validation data
+```{r}
+Results <- predict(modRF1, newdata=validData)
+Results
+```
+
+
+
